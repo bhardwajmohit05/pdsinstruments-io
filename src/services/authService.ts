@@ -39,7 +39,7 @@ export const authService = {
     const { password, ...userWithoutPassword } = userData;
     const id = Date.now().toString();
     
-    const newUser = {
+    const newUser: User = {
       id,
       ...userWithoutPassword,
       status: "Active",
@@ -73,7 +73,8 @@ export const authService = {
     const { password, ...userWithoutPassword } = userData;
     const id = Date.now().toString();
     
-    const newUser = {
+    // Explicitly type the newUser as User to ensure type safety
+    const newUser: User = {
       id,
       ...userWithoutPassword,
     };
