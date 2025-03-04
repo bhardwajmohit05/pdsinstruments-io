@@ -15,44 +15,58 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useNavigate, useLocation } from "react-router-dom";
+import { useAuth } from "@/hooks/useAuth";
 
 const DashboardSidebar = () => {
   const [collapsed, setCollapsed] = useState(false);
   const navigate = useNavigate();
   const location = useLocation();
+  const { user } = useAuth();
 
+  // Determine which menu items to show based on user role
   const menuItems = [
     {
       title: "Dashboard",
       icon: <LayoutDashboard className="h-5 w-5" />,
       path: "/dashboard",
+      showForRoles: ["Admin", "Client"]
     },
     {
       title: "Users",
       icon: <Users className="h-5 w-5" />,
       path: "/users",
+      showForRoles: ["Admin"] // Only show for Admin
     },
     {
       title: "Devices",
       icon: <Server className="h-5 w-5" />,
       path: "/devices",
+      showForRoles: ["Admin", "Client"]
     },
     {
       title: "Analytics",
       icon: <BarChart className="h-5 w-5" />,
       path: "/analytics",
+      showForRoles: ["Admin", "Client"]
     },
     {
       title: "Reports",
       icon: <FilePieChart className="h-5 w-5" />,
       path: "/reports",
+      showForRoles: ["Admin", "Client"]
     },
     {
       title: "Settings",
       icon: <Settings className="h-5 w-5" />,
       path: "/settings",
+      showForRoles: ["Admin", "Client"]
     },
   ];
+
+  // Filter menu items based on user role
+  const filteredMenuItems = menuItems.filter(item => 
+    !user || item.showForRoles.includes(user.role)
+  );
 
   return (
     <aside
@@ -74,7 +88,7 @@ const DashboardSidebar = () => {
         </div>
         <Separator className="mb-4" />
         <nav className="flex flex-col gap-1 px-2 flex-1">
-          {menuItems.map((item) => (
+          {filteredMenuItems.map((item) => (
             <Button
               key={item.path}
               variant={location.pathname === item.path ? "secondary" : "ghost"}
