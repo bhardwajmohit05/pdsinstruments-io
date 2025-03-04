@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
@@ -11,25 +11,9 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import DashboardHeader from "@/components/dashboard/DashboardHeader";
 import DashboardSidebar from "@/components/dashboard/DashboardSidebar";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-
-// Mock user data
-const initialUsers = [
-  { id: 1, name: "John Doe", email: "john.doe@example.com", role: "Client", devices: 5, status: "Active", contact: "123-456-7890", subUsers: 2 },
-  { id: 2, name: "Jane Smith", email: "jane.smith@example.com", role: "Client", devices: 3, status: "Active", contact: "123-456-7891", subUsers: 1 },
-  { id: 3, name: "Robert Johnson", email: "robert@example.com", role: "Client", devices: 7, status: "Inactive", contact: "123-456-7892", subUsers: 0 },
-  { id: 4, name: "Admin User", email: "admin@example.com", role: "Admin", devices: 0, status: "Active", contact: "123-456-7893", subUsers: 0 },
-];
-
-// Mock sub-users data
-const initialSubUsers = [
-  { id: 1, name: "Sub User 1", email: "sub1@example.com", parentUser: "John Doe", status: "Active", accessLevel: "Read-only" },
-  { id: 2, name: "Sub User 2", email: "sub2@example.com", parentUser: "John Doe", status: "Active", accessLevel: "Read-only" },
-  { id: 3, name: "Sub User 3", email: "sub3@example.com", parentUser: "Jane Smith", status: "Active", accessLevel: "Read-only" },
-];
+import { useAuth } from "@/hooks/useAuth";
 
 const UserManagement = () => {
-  const [users, setUsers] = useState(initialUsers);
-  const [subUsers, setSubUsers] = useState(initialSubUsers);
   const [searchTerm, setSearchTerm] = useState("");
   const [newUser, setNewUser] = useState({ 
     name: "", 
@@ -47,10 +31,19 @@ const UserManagement = () => {
     parentUser: "", 
     accessLevel: "Read-only" 
   });
-  const [open, setOpen] = useState(false);
+  const [userOpen, setUserOpen] = useState(false);
   const [subUserOpen, setSubUserOpen] = useState(false);
   const [activeTab, setActiveTab] = useState("users");
   const { toast } = useToast();
+  const { getUsers, addUser, updateUser, deleteUser, getUser } = useAuth();
+  
+  const [users, setUsers] = useState(getUsers());
+  const [subUsers, setSubUsers] = useState([]);
+
+  // Refresh users when changes happen
+  useEffect(() => {
+    setUsers(getUsers());
+  }, [getUsers]);
 
   const filteredUsers = users.filter(
     (user) =>
@@ -84,26 +77,31 @@ const UserManagement = () => {
       return;
     }
 
-    const id = users.length ? Math.max(...users.map((u) => u.id)) + 1 : 1;
-    const user = {
-      id,
-      name: newUser.name,
-      email: newUser.email,
-      role: newUser.role,
-      contact: newUser.contact,
-      devices: 0,
-      status: "Active",
-      subUsers: 0,
-    };
-
-    setUsers([...users, user]);
-    setNewUser({ name: "", email: "", password: "", confirmPassword: "", role: "Client", contact: "" });
-    setOpen(false);
-    
-    toast({
-      title: "User Added",
-      description: `${user.name} has been added successfully.`,
-    });
+    try {
+      const userId = addUser({
+        name: newUser.name,
+        email: newUser.email,
+        password: newUser.password,
+        role: newUser.role as "Admin" | "Client",
+        contact: newUser.contact,
+        status: "Active"
+      });
+      
+      setNewUser({ name: "", email: "", password: "", confirmPassword: "", role: "Client", contact: "" });
+      setUserOpen(false);
+      setUsers(getUsers()); // Refresh the users list
+      
+      toast({
+        title: "User Added",
+        description: `${newUser.name} has been added successfully.`,
+      });
+    } catch (error) {
+      toast({
+        title: "Error",
+        description: "Failed to add user. Email may already be in use.",
+        variant: "destructive",
+      });
+    }
   };
 
   const handleAddSubUser = () => {
@@ -154,21 +152,23 @@ const UserManagement = () => {
     });
   };
 
-  const handleDeleteUser = (id: number) => {
-    const user = users.find((u) => u.id === id);
+  const handleDeleteUser = (id: string) => {
+    const user = getUser(id);
     
-    // Also delete all sub-users associated with this user
-    if (user) {
-      const updatedSubUsers = subUsers.filter(su => su.parentUser !== user.name);
-      setSubUsers(updatedSubUsers);
+    if (deleteUser(id)) {
+      // Also delete all sub-users associated with this user
+      if (user) {
+        const updatedSubUsers = subUsers.filter(su => su.parentUser !== user.name);
+        setSubUsers(updatedSubUsers);
+      }
+      
+      setUsers(getUsers()); // Refresh users list
+      
+      toast({
+        title: "User Deleted",
+        description: `${user?.name} has been removed.`,
+      });
     }
-    
-    setUsers(users.filter((user) => user.id !== id));
-    
-    toast({
-      title: "User Deleted",
-      description: `${user?.name} has been removed.`,
-    });
   };
 
   const handleDeleteSubUser = (id: number) => {
@@ -192,22 +192,21 @@ const UserManagement = () => {
     });
   };
 
-  const toggleUserStatus = (id: number) => {
-    const updatedUsers = users.map(user => 
-      user.id === id 
-        ? { ...user, status: user.status === "Active" ? "Blocked" : "Active" }
-        : user
-    );
+  const toggleUserStatus = (id: string) => {
+    const user = getUser(id);
     
-    const user = users.find(u => u.id === id);
-    const newStatus = user?.status === "Active" ? "Blocked" : "Active";
-    
-    setUsers(updatedUsers);
-    
-    toast({
-      title: `User ${newStatus}`,
-      description: `${user?.name} has been ${newStatus.toLowerCase()}.`,
-    });
+    if (user) {
+      const newStatus = user.status === "Active" ? "Blocked" : "Active";
+      
+      if (updateUser(id, { status: newStatus as "Active" | "Blocked" | "Inactive" })) {
+        setUsers(getUsers()); // Refresh the users list
+        
+        toast({
+          title: `User ${newStatus}`,
+          description: `${user.name} has been ${newStatus.toLowerCase()}.`,
+        });
+      }
+    }
   };
 
   const clientUsers = users.filter(user => user.role === "Client");
@@ -221,7 +220,7 @@ const UserManagement = () => {
           <div className="flex items-center justify-between mb-6">
             <h1 className="text-3xl font-bold tracking-tight">User Management</h1>
             <div className="flex gap-2">
-              <Dialog open={open} onOpenChange={setOpen}>
+              <Dialog open={userOpen} onOpenChange={setUserOpen}>
                 <DialogTrigger asChild>
                   <Button>
                     <UserPlus className="h-4 w-4 mr-2" /> Add User
@@ -229,7 +228,7 @@ const UserManagement = () => {
                 </DialogTrigger>
                 <DialogContent className="sm:max-w-[425px]">
                   <DialogHeader>
-                    <DialogTitle>Add New User</DialogTitle>
+                    <DialogTitle>Register New User</DialogTitle>
                     <DialogDescription>
                       Create a new user account with appropriate role and permissions.
                     </DialogDescription>
@@ -301,8 +300,8 @@ const UserManagement = () => {
                     </div>
                   </div>
                   <DialogFooter>
-                    <Button variant="outline" onClick={() => setOpen(false)}>Cancel</Button>
-                    <Button onClick={handleAddUser}>Add User</Button>
+                    <Button variant="outline" onClick={() => setUserOpen(false)}>Cancel</Button>
+                    <Button onClick={handleAddUser}>Register User</Button>
                   </DialogFooter>
                 </DialogContent>
               </Dialog>
@@ -434,58 +433,66 @@ const UserManagement = () => {
                         </TableRow>
                       </TableHeader>
                       <TableBody>
-                        {filteredUsers.map((user) => (
-                          <TableRow key={user.id}>
-                            <TableCell className="font-medium">{user.name}</TableCell>
-                            <TableCell>{user.email}</TableCell>
-                            <TableCell>{user.contact}</TableCell>
-                            <TableCell>
-                              <span className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium ${
-                                user.role === "Admin"
-                                  ? "bg-purple-100 text-purple-800 dark:bg-purple-900 dark:text-purple-300"
-                                  : "bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-300"
-                              }`}>
-                                {user.role}
-                              </span>
-                            </TableCell>
-                            <TableCell>{user.devices}</TableCell>
-                            <TableCell>{user.subUsers}</TableCell>
-                            <TableCell>
-                              <span
-                                className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium ${
-                                  user.status === "Active"
-                                    ? "bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-300"
-                                    : user.status === "Blocked"
-                                    ? "bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-300"
-                                    : "bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-300"
-                                }`}
-                              >
-                                {user.status}
-                              </span>
-                            </TableCell>
-                            <TableCell className="text-right">
-                              <div className="flex justify-end items-center gap-1">
-                                <Button variant="ghost" size="icon">
-                                  <Edit className="h-4 w-4" />
-                                </Button>
-                                <Button 
-                                  variant="ghost" 
-                                  size="icon"
-                                  onClick={() => toggleUserStatus(user.id)}
+                        {filteredUsers.length > 0 ? (
+                          filteredUsers.map((user) => (
+                            <TableRow key={user.id}>
+                              <TableCell className="font-medium">{user.name}</TableCell>
+                              <TableCell>{user.email}</TableCell>
+                              <TableCell>{user.contact || "N/A"}</TableCell>
+                              <TableCell>
+                                <span className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium ${
+                                  user.role === "Admin"
+                                    ? "bg-purple-100 text-purple-800 dark:bg-purple-900 dark:text-purple-300"
+                                    : "bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-300"
+                                }`}>
+                                  {user.role}
+                                </span>
+                              </TableCell>
+                              <TableCell>{user.devices || 0}</TableCell>
+                              <TableCell>{user.subUsers || 0}</TableCell>
+                              <TableCell>
+                                <span
+                                  className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium ${
+                                    user.status === "Active"
+                                      ? "bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-300"
+                                      : user.status === "Blocked"
+                                      ? "bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-300"
+                                      : "bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-300"
+                                  }`}
                                 >
-                                  {user.status === "Active" ? <Lock className="h-4 w-4" /> : <Unlock className="h-4 w-4" />}
-                                </Button>
-                                <Button 
-                                  variant="ghost" 
-                                  size="icon"
-                                  onClick={() => handleDeleteUser(user.id)}
-                                >
-                                  <Trash2 className="h-4 w-4" />
-                                </Button>
-                              </div>
+                                  {user.status}
+                                </span>
+                              </TableCell>
+                              <TableCell className="text-right">
+                                <div className="flex justify-end items-center gap-1">
+                                  <Button variant="ghost" size="icon">
+                                    <Edit className="h-4 w-4" />
+                                  </Button>
+                                  <Button 
+                                    variant="ghost" 
+                                    size="icon"
+                                    onClick={() => toggleUserStatus(user.id)}
+                                  >
+                                    {user.status === "Active" ? <Lock className="h-4 w-4" /> : <Unlock className="h-4 w-4" />}
+                                  </Button>
+                                  <Button 
+                                    variant="ghost" 
+                                    size="icon"
+                                    onClick={() => handleDeleteUser(user.id)}
+                                  >
+                                    <Trash2 className="h-4 w-4" />
+                                  </Button>
+                                </div>
+                              </TableCell>
+                            </TableRow>
+                          ))
+                        ) : (
+                          <TableRow>
+                            <TableCell colSpan={8} className="text-center py-4">
+                              No users found. Add a new user to get started.
                             </TableCell>
                           </TableRow>
-                        ))}
+                        )}
                       </TableBody>
                     </Table>
                   </TabsContent>
@@ -503,34 +510,42 @@ const UserManagement = () => {
                         </TableRow>
                       </TableHeader>
                       <TableBody>
-                        {filteredSubUsers.map((user) => (
-                          <TableRow key={user.id}>
-                            <TableCell className="font-medium">{user.name}</TableCell>
-                            <TableCell>{user.email}</TableCell>
-                            <TableCell>{user.parentUser}</TableCell>
-                            <TableCell>
-                              <span className="inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium bg-gray-100 text-gray-800 dark:bg-gray-900 dark:text-gray-300">
-                                {user.accessLevel}
-                              </span>
-                            </TableCell>
-                            <TableCell>
-                              <span className="inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-300">
-                                {user.status}
-                              </span>
-                            </TableCell>
-                            <TableCell className="text-right">
-                              <div className="flex justify-end items-center gap-1">
-                                <Button 
-                                  variant="ghost" 
-                                  size="icon"
-                                  onClick={() => handleDeleteSubUser(user.id)}
-                                >
-                                  <Trash2 className="h-4 w-4" />
-                                </Button>
-                              </div>
+                        {filteredSubUsers.length > 0 ? (
+                          filteredSubUsers.map((user) => (
+                            <TableRow key={user.id}>
+                              <TableCell className="font-medium">{user.name}</TableCell>
+                              <TableCell>{user.email}</TableCell>
+                              <TableCell>{user.parentUser}</TableCell>
+                              <TableCell>
+                                <span className="inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium bg-gray-100 text-gray-800 dark:bg-gray-900 dark:text-gray-300">
+                                  {user.accessLevel}
+                                </span>
+                              </TableCell>
+                              <TableCell>
+                                <span className="inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-300">
+                                  {user.status}
+                                </span>
+                              </TableCell>
+                              <TableCell className="text-right">
+                                <div className="flex justify-end items-center gap-1">
+                                  <Button 
+                                    variant="ghost" 
+                                    size="icon"
+                                    onClick={() => handleDeleteSubUser(user.id)}
+                                  >
+                                    <Trash2 className="h-4 w-4" />
+                                  </Button>
+                                </div>
+                              </TableCell>
+                            </TableRow>
+                          ))
+                        ) : (
+                          <TableRow>
+                            <TableCell colSpan={6} className="text-center py-4">
+                              No sub-users found.
                             </TableCell>
                           </TableRow>
-                        ))}
+                        )}
                       </TableBody>
                     </Table>
                   </TabsContent>
